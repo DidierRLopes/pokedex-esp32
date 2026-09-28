@@ -8,3 +8,16 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 # Park big static buffers (marked EXT_RAM_BSS_ATTR) in PSRAM to make room for Wi-Fi.
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# Free internal RAM for Wi-Fi: keep Wi-Fi code out of IRAM, fewer fixed RX
+# buffers (the rest are allocated on demand, in PSRAM), and a smaller LVGL
+# draw buffer: the BSP keeps it in PSRAM, so every flush needs an internal
+# DMA bounce buffer of the same size.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_RX_BA_WIN=6
+CONFIG_BSP_DISPLAY_LVGL_BUF_HEIGHT=12
+# LVGL's own 64 KB pool sits in internal RAM; the C allocator puts larger
+# blocks in PSRAM instead, which frees room for the Wi-Fi driver.
+CONFIG_LV_USE_BUILTIN_MALLOC=n
+CONFIG_LV_USE_CLIB_MALLOC=y

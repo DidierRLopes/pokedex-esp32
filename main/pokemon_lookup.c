@@ -1795,8 +1795,15 @@ void app_main(void)
     ESP_ERROR_CHECK(init_buttons());
     init_imu();
     ESP_ERROR_CHECK(init_microphone());
+#if CONFIG_POKEDEX_WIFI
+    /* The Wi-Fi driver needs the internal RAM these stacks would take: run
+       them from PSRAM (neither task touches flash). */
+    ESP_ERROR_CHECK(xTaskCreateWithCaps(record_task, "record", 16384, NULL, 7, NULL, MALLOC_CAP_SPIRAM) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreateWithCaps(control_task, "control", 8192, NULL, 5, NULL, MALLOC_CAP_SPIRAM) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+#else
     ESP_ERROR_CHECK(xTaskCreate(record_task, "record", 16384, NULL, 7, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(xTaskCreate(control_task, "control", 8192, NULL, 5, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+#endif
     /* Highest of the app tasks: it must always keep up with the USB RX ring */
     ESP_ERROR_CHECK(xTaskCreate(serial_receive_task, "serial_rx", 6144, NULL, 8, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 #if CONFIG_POKEDEX_WIFI

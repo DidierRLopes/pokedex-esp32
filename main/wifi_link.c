@@ -10,6 +10,7 @@
 
 #include <string.h>
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -128,6 +129,17 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
     }
 }
 
+/* Any failure here leaves the board working over USB instead of rebooting. */
+#define TRY(call, what)                                              \
+    do {                                                             \
+        const esp_err_t err_ = (call);                               \
+        if (err_ != ESP_OK) {                                        \
+            ESP_LOGE(TAG, "%s failed: %s", what, esp_err_to_name(err_)); \
+            status("Wi-Fi unavailable (" what "); using USB");       \
+            return;                                                  \
+        }                                                            \
+    } while (0)
+
 void wifi_link_start(const wifi_link_callbacks_t *callbacks)
 {
     s_callbacks = *callbacks;
@@ -135,22 +147,27 @@ void wifi_link_start(const wifi_link_callbacks_t *callbacks)
         status("Wi-Fi: no network configured");
         return;
     }
+    ESP_LOGI(TAG, "internal RAM free %u (largest block %u) before Wi-Fi",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         nvs_flash_erase();
         err = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(err);
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    TRY(err, "storage");
+    TRY(esp_netif_init(), "network stack");
+    TRY(esp_event_loop_create_default(), "events");
     esp_netif_create_default_wifi_sta();
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&init));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_event, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, network_event, NULL));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    TRY(esp_wifi_init(&init), "memory");
+    TRY(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_event, NULL), "events");
+    TRY(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, network_event, NULL), "events");
+    TRY(esp_wifi_set_mode(WIFI_MODE_STA), "mode");
+    TRY(esp_wifi_set_ps(WIFI_PS_MIN_MODEM), "power save");
+    TRY(esp_wifi_start(), "start");
+    ESP_LOGI(TAG, "internal RAM free %u after Wi-Fi start",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
 bool wifi_link_connected(void)
