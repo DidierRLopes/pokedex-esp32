@@ -44,7 +44,7 @@ dependencies:
       type: service
     version: 2.0.3
   espressif/esp_lcd_co5300:
-    component_hash: 21f84c5c825509ebacbddb379555b49092ae165b3e19f0edfbf6f8eff8aa036d
+    component_hash: 1a5cbaa0069c3c72c238e5a1eb32ec9dd390ec1c7c46b24bf44b9037f2fe6c56
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -56,7 +56,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 2.1.0
+    version: 2.2.0
   espressif/esp_lcd_panel_io_additions:
     component_hash: 1856c8b2c11aaa8a9fd67481582162bcad25f7064661a995f35c2ee8dd10ebcc
     dependencies:
@@ -127,17 +127,51 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 2.9.0
+  espressif/esp_websocket_client:
+    component_hash: dc00233af846f3a744ada283a300e0d586040aadc3ee67361645ecdce4523672
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.8.0
   idf:
     source:
       type: idf
     version: 5.5.5
   lvgl/lvgl:
-    component_hash: 184e532558c1c45fefed631f3e235423d22582aafb4630f3e8885c35281a49ae
-    dependencies: []
+    component_hash: 7d82410747bbfb319531449749e940f440f8414f041f9eaba13f0d1dd7f58cdd
+    dependencies:
+    - name: espressif/freetype
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_FREETYPE} == True
+      version: ^2.14.3
+    - name: espressif/libjpeg-turbo
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LIBJPEG_TURBO} == True
+      version: ^3.1.1
+    - name: espressif/libpng
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LIBPNG} == True
+      version: ^1.6.58
+    - name: espressif/lz4
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >=5.5 && $CONFIG{LV_USE_LZ4} == True && $CONFIG{LV_USE_LZ4_INTERNAL} == False
+      version: ^1.10.0
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 9.5.0
+    version: 9.6.0~1
   waveshare/esp32_s3_touch_amoled_1_8:
     component_hash: dd53b012d695112d0d6eaf137ec269b53b1518a64f56f2993f47e55b4e28b5f5
     dependencies:
@@ -189,8 +223,9 @@ dependencies:
     - esp32s3
     version: 2.0.3
 direct_dependencies:
+- espressif/esp_websocket_client
 - idf
 - waveshare/esp32_s3_touch_amoled_1_8
-manifest_hash: 252dd132ca5cb5f48417539e2980fd1c6d609a804e734ce5ecb32b13b8eb964b
+manifest_hash: 215f1e6b878708469f2d6dd6f7a7059e12e32467644cf886d884c8743e08dcb2
 target: esp32s3
 version: 2.0.0

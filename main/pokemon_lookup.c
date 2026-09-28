@@ -1,3 +1,8 @@
+#include "sdkconfig.h"
+#include "esp_attr.h"
+#if CONFIG_POKEDEX_WIFI
+#include "wifi_link.h"
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -97,7 +102,7 @@ static volatile bool s_keypad_mode = false;   /* typing instead of voice (both s
 static int s_brightness = 80;
 static lv_timer_t *s_flash_timer;
 
-static card_match_t s_matches[MAX_MATCHES];
+EXT_RAM_BSS_ATTR static card_match_t s_matches[MAX_MATCHES];
 static int s_match_count;
 static int s_match_index;
 static char s_transcript[128];        /* committed: title of the results on screen */
@@ -138,7 +143,7 @@ static lv_obj_t *s_price_label;
 static lv_indev_t *s_touch_input;
 static SemaphoreHandle_t s_serial_mutex;  /* recursive: one writer per line */
 static QueueHandle_t s_control_queue;     /* non-image lines for the UI task */
-static char s_result_decoded[6144];
+EXT_RAM_BSS_ATTR static char s_result_decoded[6144];
 
 /* Multi-tap keyboard (idle screen): type card names instead of speaking */
 static lv_obj_t *s_keypad;
@@ -180,11 +185,22 @@ static bool serial_write(const void *data, size_t length, TickType_t timeout)
     return true;
 }
 
+/* Protocol bytes go to the companion over Wi-Fi when that link is up (Wi-Fi
+   build only), otherwise over USB. Logs always stay on USB. Call with
+   s_serial_mutex held. */
+static bool proto_write(const void *data, size_t length, TickType_t timeout)
+{
+#if CONFIG_POKEDEX_WIFI
+    if (wifi_link_connected()) return wifi_link_write(data, length, timeout);
+#endif
+    return serial_write(data, length, timeout);
+}
+
 static void serial_send_line(const char *line)
 {
     xSemaphoreTakeRecursive(s_serial_mutex, portMAX_DELAY);
-    serial_write(line, strlen(line), pdMS_TO_TICKS(200));
-    serial_write("\n", 1, pdMS_TO_TICKS(200));
+    proto_write(line, strlen(line), pdMS_TO_TICKS(200));
+    proto_write("\n", 1, pdMS_TO_TICKS(200));
     xSemaphoreGiveRecursive(s_serial_mutex);
 }
 
@@ -720,7 +736,7 @@ static bool send_audio(size_t audio_bytes)
 
     xSemaphoreTakeRecursive(s_serial_mutex, portMAX_DELAY);
     int length = snprintf((char *)line, sizeof(line), "@VOICE %u\n", (unsigned)audio_bytes);
-    ok = serial_write(line, (size_t)length, timeout);
+    ok = proto_write(line, (size_t)length, timeout);
     for (size_t offset = 0; ok && offset < audio_bytes; offset += raw_chunk) {
         const size_t chunk = audio_bytes - offset > raw_chunk ? raw_chunk : audio_bytes - offset;
         size_t encoded_length = 0;
@@ -731,9 +747,9 @@ static bool send_audio(size_t audio_bytes)
             break;
         }
         line[6 + encoded_length] = '\n';
-        ok = serial_write(line, 6 + encoded_length + 1, timeout);
+        ok = proto_write(line, 6 + encoded_length + 1, timeout);
     }
-    ok = ok && serial_write("@END\n", 5, timeout);
+    ok = ok && proto_write("@END\n", 5, timeout);
     xSemaphoreGiveRecursive(s_serial_mutex);
     return ok;
 }
@@ -872,7 +888,7 @@ static void handle_result(const char *payload, size_t payload_length)
     copy_json_string(root, "transcript", s_pending_transcript, sizeof(s_pending_transcript));
 
     /* Parse into a scratch list: the current results stay intact on failure */
-    static card_match_t parsed[MAX_MATCHES];
+    EXT_RAM_BSS_ATTR static card_match_t parsed[MAX_MATCHES];
     int count = 0;
     const cJSON *matches = cJSON_GetObjectItemCaseSensitive(root, "matches");
     const cJSON *match_item = NULL;
@@ -1349,16 +1365,16 @@ static void send_snapshot(void)
     const TickType_t timeout = pdMS_TO_TICKS(2000);
     xSemaphoreTakeRecursive(s_serial_mutex, portMAX_DELAY);
     int length = snprintf((char *)line, sizeof(line), "@SNAP %u %u %u\n", (unsigned)w, (unsigned)h, (unsigned)stride);
-    bool ok = serial_write(line, (size_t)length, timeout);
+    bool ok = proto_write(line, (size_t)length, timeout);
     for (size_t offset = 0; ok && offset < total; offset += raw_chunk) {
         const size_t chunk = total - offset > raw_chunk ? raw_chunk : total - offset;
         size_t encoded = 0;
         memcpy(line, "@SNAPDATA ", 10);
         if (mbedtls_base64_encode(line + 10, sizeof(line) - 12, &encoded, pixels + offset, chunk) != 0) break;
         line[10 + encoded] = '\n';
-        ok = serial_write(line, 10 + encoded + 1, timeout);
+        ok = proto_write(line, 10 + encoded + 1, timeout);
     }
-    serial_write("@SNAPEND\n", 9, timeout);
+    proto_write("@SNAPEND\n", 9, timeout);
     xSemaphoreGiveRecursive(s_serial_mutex);
 }
 
@@ -1488,6 +1504,47 @@ static void serial_receive_task(void *arg)
         }
     }
 }
+
+#if CONFIG_POKEDEX_WIFI
+/* WebSocket frames can split or join lines: reassemble, then dispatch like
+   USB. Runs on the WebSocket client's task. */
+static void network_bytes(const char *data, size_t count)
+{
+    EXT_RAM_BSS_ATTR static char line[SERIAL_LINE_MAX];
+    static size_t length;
+    static bool overflow;
+    for (size_t i = 0; i < count; ++i) {
+        const char input = data[i];
+        if (input != '\r' && input != '\n') {
+            if (length + 1 < sizeof(line)) line[length++] = input;
+            else overflow = true;
+            continue;
+        }
+        if (length > 0 && !overflow) {
+            line[length] = '\0';
+            dispatch_line(line, length);
+        }
+        length = 0;
+        overflow = false;
+    }
+}
+
+/* Show the link state on the idle screen, so it's clear why nothing answers. */
+static void network_status(const char *text)
+{
+    if (s_state == APP_IDLE && bsp_display_lock(100)) {
+        if (s_state == APP_IDLE) apply_idle_ui(text);
+        bsp_display_unlock();
+    }
+}
+
+static void network_connected(void)
+{
+    char hello[24];
+    snprintf(hello, sizeof(hello), "@HELLO %d", PROTOCOL_VERSION);
+    serial_send_line(hello);  /* goes over the new link: the companion answers @READY */
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Touch: right-edge strips ONLY flip pages; hold the center to record. */
@@ -1742,6 +1799,12 @@ void app_main(void)
     ESP_ERROR_CHECK(xTaskCreate(control_task, "control", 8192, NULL, 5, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
     /* Highest of the app tasks: it must always keep up with the USB RX ring */
     ESP_ERROR_CHECK(xTaskCreate(serial_receive_task, "serial_rx", 6144, NULL, 8, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+#if CONFIG_POKEDEX_WIFI
+    const wifi_link_callbacks_t link = {
+        .on_bytes = network_bytes, .on_status = network_status, .on_connected = network_connected,
+    };
+    wifi_link_start(&link);
+#endif
     ESP_LOGI(TAG, "Pokedex v2.0 ready (%s %s), internal RAM free %u, PSRAM free %u",
              __DATE__, __TIME__,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),

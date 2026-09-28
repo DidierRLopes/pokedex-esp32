@@ -19,7 +19,9 @@ Protocol v2 (mirrors firmware main/pokemon_lookup.c):
                  @IMGERR <cardId>
 """
 import argparse
+import asyncio
 import base64
+import hmac
 import difflib
 import json
 import os
@@ -865,6 +867,8 @@ class VoiceRecognizer:
         order = np.argsort(-scores)
         return [(self.names[keep[i]], float(scores[i])) for i in order]
 
+    _lock = threading.Lock()
+
     def recognize(self, audio: np.ndarray):
         """Returns (heard, name, rest): the plain transcript, the card name it
         most likely says, and the words spoken after it. name is None when
@@ -872,7 +876,8 @@ class VoiceRecognizer:
         self._ready.wait()
         if self._error:
             raise RuntimeError(f"Whisper unavailable: {self._error}")
-        return self._recognize(audio)
+        with self._lock:
+            return self._recognize(audio)
 
     def _recognize(self, audio):
         mel = log_mel_spectrogram(audio, n_mels=self.model.dims.n_mels, padding=N_SAMPLES)
@@ -913,6 +918,108 @@ def stream_image(board: Board, image_server: ImageServer, card_id: str):
     print(f"Sent {card_id} ({len(data)} bytes) in {time.time() - start:.2f}s", flush=True)
 
 
+# ---------------------------------------------------------------------------
+# Network link (optional): the board over Wi-Fi instead of USB
+# ---------------------------------------------------------------------------
+
+class NetworkLink:
+    """A board connected over a WebSocket, shaped like the serial port Board
+    reads from: text frames in, text frames out, same line protocol."""
+
+    def __init__(self, websocket, loop, peer: str):
+        self.websocket = websocket
+        self.loop = loop
+        self.peer = peer
+        self._buffer = bytearray()
+        self._ready = threading.Condition()
+        self._closed = False
+
+    # -- fed from the asyncio side --
+    def feed(self, data: bytes):
+        with self._ready:
+            self._buffer.extend(data)
+            self._ready.notify_all()
+
+    def close(self):
+        with self._ready:
+            self._closed = True
+            self._ready.notify_all()
+
+    # -- what Board expects from a serial port --
+    @property
+    def in_waiting(self) -> int:
+        with self._ready:
+            return len(self._buffer)
+
+    def read(self, size: int = 1) -> bytes:
+        with self._ready:
+            if not self._buffer and not self._closed:
+                self._ready.wait(0.25)
+            if not self._buffer and self._closed:
+                raise ConnectionError(f"board {self.peer} disconnected")
+            chunk = bytes(self._buffer[:size])
+            del self._buffer[:size]
+            return chunk
+
+    def write(self, data: bytes):
+        if self._closed:
+            raise ConnectionError(f"board {self.peer} disconnected")
+        future = asyncio.run_coroutine_threadsafe(self.websocket.send(data.decode("ascii")), self.loop)
+        future.result(timeout=20)
+        return len(data)
+
+
+def serve_network(host: str, port: int, token: str, services):
+    """Accept boards at ws://host:port/?token=... (put Tailscale Funnel or a
+    reverse proxy in front for TLS). Runs its own event loop thread."""
+    from websockets.asyncio.server import serve
+
+    async def handler(websocket):
+        peer = "%s:%s" % websocket.remote_address[:2] if websocket.remote_address else "?"
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(websocket.request.path).query)
+        offered = (query.get("token") or [""])[0] or websocket.request.headers.get("X-PokeDex-Token", "")
+        if not hmac.compare_digest(offered, token):
+            print(f"WARN rejected network board {peer}: bad token", file=sys.stderr)
+            await websocket.close(4001, "bad token")
+            return
+        loop = asyncio.get_running_loop()
+        link = NetworkLink(websocket, loop, peer)
+        print(f"PokeDex board connected over the network ({peer})", flush=True)
+
+        def session():
+            try:
+                serve_session(Board(link), *services)
+            except (ConnectionError, OSError) as error:
+                print(f"Network board gone: {error}", flush=True)
+
+        worker = threading.Thread(target=session, daemon=True)
+        worker.start()
+        try:
+            async for message in websocket:
+                link.feed(message.encode() if isinstance(message, str) else message)
+        except Exception as error:  # a dropped cellular link is routine
+            print(f"WARN network link dropped ({error})", file=sys.stderr)
+        finally:
+            link.close()
+
+    async def main():
+        async with serve(handler, host, port, max_size=2 ** 22, ping_interval=15, ping_timeout=20):
+            print(f"Listening for network boards on ws://{host}:{port}/", flush=True)
+            await asyncio.Future()
+
+    threading.Thread(target=lambda: asyncio.run(main()), daemon=True, name="network").start()
+
+
+def load_token(args) -> str:
+    token = args.token or os.environ.get("POKEDEX_TOKEN", "")
+    if not token and args.token_file and args.token_file.expanduser().exists():
+        token = args.token_file.expanduser().read_text().strip()
+    if len(token) < 16:
+        raise SystemExit("--listen needs a shared token of 16+ characters "
+                         "(--token, POKEDEX_TOKEN, or --token-file)")
+    return token
+
+
 def run(port_arg: str | None, args, website_root: Path):
     owned_store = OwnedStore(website_root, args.owned, args.vault_url,
                              args.vault_user, args.vault_slug)
@@ -927,6 +1034,12 @@ def run(port_arg: str | None, args, website_root: Path):
         recognizer = VoiceRecognizer(args.model, (card["name"] for card in catalog.cards))
     if not args.no_prewarm_images:
         prewarm_images(image_server)
+    if args.listen:
+        host, _, listen_port = args.listen.rpartition(":")
+        serve_network(host or "127.0.0.1", int(listen_port), load_token(args),
+                      (owned_store, catalog, image_server, enricher, recognizer, args))
+    if args.no_serial:
+        threading.Event().wait()  # network boards only (e.g. the Mac mini)
 
     waiting_logged = False
     while True:
@@ -948,9 +1061,6 @@ def run(port_arg: str | None, args, website_root: Path):
 
 
 def serve_board(port: str, owned_store, catalog, image_server, enricher, recognizer, args):
-    expected = 0
-    audio = bytearray()
-
     device = serial.Serial()
     device.port = port
     device.baudrate = 115200
@@ -961,63 +1071,70 @@ def serve_board(port: str, owned_store, catalog, image_server, enricher, recogni
     device.open()
     board = Board(device)
     print(f"PokeDex bridge using {port}", flush=True)
-    board.send(f"@READY {PROTOCOL_VERSION}")
-
     try:
-        while True:
-            line = board.readline()
-            if line is None:
-                continue
-            try:
-                if line.startswith("@DATA "):
-                    if expected:
-                        audio.extend(base64.b64decode(line[6:]))
-                elif line.startswith("@VOICE "):
-                    expected = int(line.split(maxsplit=1)[1])
-                    audio.clear()
-                    ACTIVITY.mark_busy(60)
-                elif line == "@END":
-                    if not expected:
-                        continue
-                    pcm, wanted = bytes(audio), expected
-                    expected = 0
-                    audio.clear()
-                    if len(pcm) != wanted:
-                        message = f"Audio incomplete: {len(pcm)}/{wanted} bytes"
-                        print(f"WARN {message}", file=sys.stderr)
-                        board.send(f"@ERROR {b64_argue(message)}")
-                    else:
-                        handle_audio(board, pcm, catalog, owned_store, enricher, recognizer, args)
-                elif line.startswith("@GETIMG "):
-                    stream_image(board, image_server, line[8:].strip())
-                elif line.startswith("@QUERY "):
-                    typed = base64.b64decode(line[7:]).decode("utf-8").strip()
-                    print(f"Typed query: \"{typed}\"", flush=True)
-                    ACTIVITY.mark_busy(60)
-                    board.send(f"@TEXT {b64_argue(typed)}")
-                    lookup_and_reply(board, typed, catalog, owned_store, enricher)
-                elif line.startswith("@HELLO"):
-                    version = line.split()[1] if len(line.split()) > 1 else "1"
-                    if version != str(PROTOCOL_VERSION):
-                        print(f"WARN board speaks protocol {version}, bridge {PROTOCOL_VERSION}: "
-                              "reflash the firmware", file=sys.stderr)
-                    print("Board booted; handshake sent", flush=True)
-                    board.send(f"@READY {PROTOCOL_VERSION}")
-                elif line[:3] in ("I (", "W (", "E ("):
-                    print(f"ESP32: {line}", flush=True)
-            except (serial.SerialException, OSError):
-                raise
-            except Exception as error:
-                # One bad request must never tear down the whole session
-                print(f"WARN failed handling {line[:40]!r}: {error}", file=sys.stderr)
-                expected = 0
-                audio.clear()
-                try:
-                    board.send(f"@ERROR {b64_argue('Mac error: ' + str(error)[:60])}")
-                except Exception:
-                    pass
+        serve_session(board, owned_store, catalog, image_server, enricher, recognizer, args)
     finally:
         device.close()
+
+
+def serve_session(board: "Board", owned_store, catalog, image_server, enricher, recognizer, args):
+    """One connected board, over USB serial or the network: the same protocol
+    either way. Returns or raises when the link drops."""
+    expected = 0
+    audio = bytearray()
+    board.send(f"@READY {PROTOCOL_VERSION}")
+    while True:
+        line = board.readline()
+        if line is None:
+            continue
+        try:
+            if line.startswith("@DATA "):
+                if expected:
+                    audio.extend(base64.b64decode(line[6:]))
+            elif line.startswith("@VOICE "):
+                expected = int(line.split(maxsplit=1)[1])
+                audio.clear()
+                ACTIVITY.mark_busy(60)
+            elif line == "@END":
+                if not expected:
+                    continue
+                pcm, wanted = bytes(audio), expected
+                expected = 0
+                audio.clear()
+                if len(pcm) != wanted:
+                    message = f"Audio incomplete: {len(pcm)}/{wanted} bytes"
+                    print(f"WARN {message}", file=sys.stderr)
+                    board.send(f"@ERROR {b64_argue(message)}")
+                else:
+                    handle_audio(board, pcm, catalog, owned_store, enricher, recognizer, args)
+            elif line.startswith("@GETIMG "):
+                stream_image(board, image_server, line[8:].strip())
+            elif line.startswith("@QUERY "):
+                typed = base64.b64decode(line[7:]).decode("utf-8").strip()
+                print(f"Typed query: \"{typed}\"", flush=True)
+                ACTIVITY.mark_busy(60)
+                board.send(f"@TEXT {b64_argue(typed)}")
+                lookup_and_reply(board, typed, catalog, owned_store, enricher)
+            elif line.startswith("@HELLO"):
+                version = line.split()[1] if len(line.split()) > 1 else "1"
+                if version != str(PROTOCOL_VERSION):
+                    print(f"WARN board speaks protocol {version}, bridge {PROTOCOL_VERSION}: "
+                          "reflash the firmware", file=sys.stderr)
+                print("Board booted; handshake sent", flush=True)
+                board.send(f"@READY {PROTOCOL_VERSION}")
+            elif line[:3] in ("I (", "W (", "E ("):
+                print(f"ESP32: {line}", flush=True)
+        except (serial.SerialException, OSError):
+            raise
+        except Exception as error:
+            # One bad request must never tear down the whole session
+            print(f"WARN failed handling {line[:40]!r}: {error}", file=sys.stderr)
+            expected = 0
+            audio.clear()
+            try:
+                board.send(f"@ERROR {b64_argue('Mac error: ' + str(error)[:60])}")
+            except Exception:
+                pass
 
 
 def handle_audio(board: Board, pcm: bytes, catalog: Catalog, owned_store: OwnedStore,
@@ -1101,6 +1218,13 @@ def build_parser():
                         help="Disable live price refresh from psapop")
     parser.add_argument("--no-prewarm-images", action="store_true",
                         help="Skip background download of the full vintage art cache")
+    parser.add_argument("--listen", metavar="HOST:PORT",
+                        help="Also accept boards over WebSocket (Wi-Fi build), e.g. 127.0.0.1:8765")
+    parser.add_argument("--token", help="Shared secret boards must present (or POKEDEX_TOKEN)")
+    parser.add_argument("--token-file", type=Path, default=Path("~/.pokedex-token"),
+                        help="File holding the shared secret")
+    parser.add_argument("--no-serial", action="store_true",
+                        help="Don't look for a USB board (network only)")
     return parser
 
 

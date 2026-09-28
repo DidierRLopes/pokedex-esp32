@@ -3,3 +3,4 @@ mlx>=0.32
 numpy>=2.0
 pillow>=11.0
 pyserial>=3.5
+websockets>=13

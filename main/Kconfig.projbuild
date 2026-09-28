@@ -1,0 +1,42 @@
+menu "PokeDex"
+
+config POKEDEX_WIFI
+    bool "Reach the companion over Wi-Fi (e.g. a Mac mini behind Tailscale Funnel)"
+    default n
+    help
+        Adds a Wi-Fi + secure WebSocket link alongside USB. When the WebSocket
+        is up the board talks to the companion over it; otherwise over USB,
+        exactly as the default build does.
+
+if POKEDEX_WIFI
+
+config POKEDEX_WIFI_SSID
+    string "Wi-Fi network (e.g. your iPhone's Personal Hotspot)"
+    default ""
+
+config POKEDEX_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+config POKEDEX_WIFI_SSID2
+    string "Second Wi-Fi network (optional, e.g. home)"
+    default ""
+
+config POKEDEX_WIFI_PASSWORD2
+    string "Second Wi-Fi password"
+    default ""
+
+config POKEDEX_SERVER_URL
+    string "Companion WebSocket URL"
+    default "wss://mac-mini.example.ts.net/"
+    help
+        The companion started with --listen, e.g. behind Tailscale Funnel:
+        wss://<machine>.<tailnet>.ts.net/
+
+config POKEDEX_TOKEN
+    string "Shared token (same as the companion's)"
+    default ""
+
+endif
+
+endmenu

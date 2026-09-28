@@ -14,3 +14,8 @@ host/image_cache/
 host/owned_cards.json
 host/price_cache.json
 host/catalog_snapshot.json
+
+# Wi-Fi build (tools/build_wifi.sh); the local file holds Wi-Fi passwords and the token
+build-wifi/
+sdkconfig.wifi
+sdkconfig.defaults.wifi.local

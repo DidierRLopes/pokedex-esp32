@@ -5,3 +5,5 @@ dependencies:
   waveshare/esp32_s3_touch_amoled_1_8:
     version: "^2.0.3"
     public: true
+  # Only linked by the Wi-Fi build (CONFIG_POKEDEX_WIFI)
+  espressif/esp_websocket_client: "^1.4.0"

@@ -81,6 +81,52 @@ The catalog is read from a `pokemon-website` checkout:
 
 Any directory with that layout works with `--website`.
 
+## Wi-Fi version (branch `wifi-tailscale`, being tested)
+
+An optional second setup: the board reaches the companion over Wi-Fi (your iPhone's hotspot at a card show) instead of a USB cable, and the companion runs on an always-on Mac mini published with Tailscale Funnel. The USB build and USB companion are unchanged, and the Wi-Fi build still works over USB too.
+
+```
+board ──Wi-Fi──▶ iPhone hotspot ──▶ internet ──▶ Tailscale Funnel (HTTPS) ──▶ Mac mini: companion --listen
+```
+
+### 1. Mac mini: the companion as a service
+
+Needs Apple Silicon, Python 3.12, and Tailscale installed and signed in.
+
+```bash
+git clone https://github.com/DidierRLopes/pokedex-esp32.git && cd pokedex-esp32
+git checkout wifi-tailscale
+python3.12 -m venv .voice-venv && .voice-venv/bin/pip install -r requirements.txt
+
+host/macmini/install.sh          # always-on service on 127.0.0.1:8765; creates ~/.pokedex-token
+tailscale funnel --bg 8765       # publish it at https://<mac-mini>.<tailnet>.ts.net/
+```
+
+- The script prints the board's URL and token. Rerunning it is safe; `host/macmini/install.sh uninstall` removes the service.
+- **Card catalog:** the companion looks for `~/Documents/git/pokemon-website`. If it lives elsewhere, pass it with `POKEDEX_ARGS="--website /path/to/pokemon-website" host/macmini/install.sh`, or copy `host/catalog_snapshot.json` from a machine that has already loaded the catalog. If the checkout is under `~/Documents`, give Python Documents access (System Settings > Privacy & Security > Files and Folders).
+- **Keep it on:** System Settings > Energy: prevent automatic sleeping, and start up automatically after a power failure.
+- **Logs:** `tail -f ~/Library/Logs/pokedex-companion.log`. The first start downloads the Whisper model (~460 MB).
+- **Checks:** `.voice-venv/bin/python host/test_network.py Gengar` tests the network path locally (no board needed). `curl -i https://<mac-mini>.<tailnet>.ts.net/` from another network should answer with a WebSocket upgrade error, which means Funnel reaches the companion.
+
+### 2. Build machine: flash the Wi-Fi firmware
+
+On the machine with ESP-IDF and the board on USB:
+
+```bash
+git checkout wifi-tailscale
+cp sdkconfig.defaults.wifi.local.example sdkconfig.defaults.wifi.local   # git-ignored
+# fill in: hotspot name/password (optional second network, e.g. home), the URL and token from step 1
+tools/build_wifi.sh flash        # separate build-wifi/ and sdkconfig.wifi; the default build is untouched
+```
+
+- On the iPhone, turn on Personal Hotspot > **Maximize Compatibility**: the ESP32-S3 only uses 2.4 GHz.
+- The idle screen shows the link state: joining Wi-Fi, connecting, connected. When the WebSocket is up the board talks over it; otherwise over USB.
+- To go back to the USB-only firmware: `idf.py -p /dev/cu.usbmodem* flash`.
+
+### How it works
+
+The link carries the same line protocol as USB, in WebSocket text frames. The board sends the token in an `X-PokeDex-Token` header (the companion also accepts `?token=`); a wrong token is closed with code 4001. The companion only listens on `127.0.0.1`; Tailscale Funnel provides the HTTPS address and certificate.
+
 ## Tests
 
 ```bash

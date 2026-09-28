@@ -1,0 +1,10 @@
+# Wi-Fi build of PokeDex: layered on sdkconfig.defaults by tools/build_wifi.sh.
+# Network names, passwords, URL and token go in sdkconfig.defaults.wifi.local
+# (git-ignored; copy sdkconfig.defaults.wifi.local.example).
+CONFIG_POKEDEX_WIFI=y
+# Internal RAM is tight (display, audio): let Wi-Fi, lwIP and TLS use PSRAM.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+# Park big static buffers (marked EXT_RAM_BSS_ATTR) in PSRAM to make room for Wi-Fi.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
