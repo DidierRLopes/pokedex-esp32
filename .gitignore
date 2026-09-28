@@ -1,0 +1,16 @@
+# ESP-IDF
+build/
+managed_components/
+sdkconfig
+sdkconfig.old
+
+# Python
+.voice-venv/
+__pycache__/
+
+# Companion runtime data (personal inventory, caches, recordings)
+runtime/
+host/image_cache/
+host/owned_cards.json
+host/price_cache.json
+host/catalog_snapshot.json
