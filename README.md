@@ -93,6 +93,8 @@ Any directory with that layout works with `--website`.
 
 Both accept companion options such as `--website`.
 
+`host/capture_screens.py OUT_DIR --name Venusaur` saves pixel-exact PNGs of the board's screens (idle, listening, searching, every result) through the `@TEST SNAPSHOT` hook, plus the exact results the board was sent. The launch video in `video/` is built from these.
+
 ## Serial protocol
 
 Version 2, one message per line over the USB-Serial-JTAG port. Board logs share the wire and are ignored by the companion.
@@ -109,6 +111,7 @@ Version 2, one message per line over the USB-Serial-JTAG port. Board logs share 
 | Mac → Board | `@IMG <cardId> w h` / `@DATA b64`… / `@IMGEND <cardId>` | Raw RGB565 194×272 frame |
 | Mac → Board | `@IMGERR <cardId>` / `@ERROR b64` | No art / lookup failed |
 | Mac → Board | `@TEST …` | Test hooks (see `handle_test_command`) |
+| Board → Mac | `@SNAP w h stride` / `@SNAPDATA b64`… / `@SNAPEND` | Screen capture (RGB565), answering `@TEST SNAPSHOT` |
 
 ## Project layout
 

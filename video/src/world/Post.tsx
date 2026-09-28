@@ -13,7 +13,7 @@ import { N8AOPostPass } from "n8ao";
 import { CUE } from "../cues.ts";
 import { hit, kick, lerp, prog } from "../anim.ts";
 import { cameraAt } from "./camera.ts";
-import { DEVICE } from "./layout.ts";
+import { BOARD_POS } from "./layout.ts";
 import { H, W } from "../theme.ts";
 
 export const Post: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
@@ -45,15 +45,14 @@ export const Post: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) =>
 
   const h = hit(s);
   const { look, pos } = cameraAt(s, poster);
-  // The thumbnail frames the board off-centre, so focus on the board itself.
-  fx.dof.target = poster ? DEVICE.pos.clone() : new THREE.Vector3(look[0], look[1], look[2]);
-  // Shallow focus on the macro and the long box; deep over the mosaic.
-  const dist = Math.hypot(pos[0] - look[0], pos[1] - look[1], pos[2] - look[2]);
-  const macro = Math.exp(-Math.max(0, dist - 3) / 6);
-  const overMosaic = prog(s, CUE.tiles[0], CUE.tiles[0] + 1) * (1 - prog(s, CUE.outro, CUE.outro + 1.5));
-  fx.dof.bokehScale = poster ? 1.6 : lerp(1.2, 4.5, macro) * (1 - overMosaic * 0.85);
-  fx.bloom.intensity = 0.9 + h * 0.8 + kick(s) * 0.15;
-  const ca = 0.0006 + h * 0.004 + kick(s) * 0.0004;
+  // Focus where the story is: the board, then the card beside it, then the fan.
+  const focus = poster ? BOARD_POS.clone() : new THREE.Vector3(look[0], look[1], look[2]);
+  fx.dof.target = focus;
+  const dist = Math.hypot(pos[0] - focus.x, pos[1] - focus.y, pos[2] - focus.z);
+  const wide = prog(s, CUE.fan, CUE.fan + 1) * (poster ? 0 : 1);
+  fx.dof.bokehScale = lerp(1.8, 0.5, prog(dist, 9, 22)) * (1 - wide * 0.6);
+  fx.bloom.intensity = 0.8 + h * 0.6 + kick(s) * 0.12;
+  const ca = 0.0005 + h * 0.003 + kick(s) * 0.0003;
   fx.ca.offset.set(ca, ca * 0.6);
 
   useFrame(() => {

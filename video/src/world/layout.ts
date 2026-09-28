@@ -1,37 +1,30 @@
-// Where everything sits on the tabletop. Units are roughly centimetres.
+// Where everything sits. Units are centimetres, so the board and the cards
+// keep their real sizes relative to each other.
 import * as THREE from "three";
-import { NAMES } from "../data.ts";
 
-// The board stands on a little easel, leaning back.
-export const DEVICE = {
-  pos: new THREE.Vector3(4, 2.95, 0),
-  tilt: -0.2, // radians about x
-  body: [4.4, 5.2, 0.45] as const,
-  screen: [3.68, 4.48] as const, // 368x448 panel, 1 unit = 100 px
+// Waveshare ESP32-S3-Touch-AMOLED-1.8, from the official dimension drawing:
+// case 37.6 x 45.2 x 15 mm; display 28.7 x 34.94 mm (368 x 448 px), sitting
+// 3.6 mm from the top edge and 5.7 mm from the bottom; BOOT, USB-C and PWR
+// down the right side.
+export const BOARD = {
+  w: 3.76, h: 4.52, d: 1.5, r: 0.72,
+  screen: { w: 2.87, h: 3.494, y: 0.105, r: 0.22 },
+  side: { boot: 1.04, usb: 0, pwr: -1.04 }, // y on the right face
 };
-export const deviceMatrix = new THREE.Matrix4().compose(
-  DEVICE.pos,
-  new THREE.Quaternion().setFromEuler(new THREE.Euler(DEVICE.tilt, 0, 0)),
-  new THREE.Vector3(1, 1, 1),
-);
-// Point on the screen's surface from panel pixels (0..368, 0..448).
-export const screenPoint = (px: number, py: number, lift = 0.01) =>
-  new THREE.Vector3(px / 100 - 1.84, 2.24 - py / 100, DEVICE.body[2] / 2 + lift).applyMatrix4(deviceMatrix);
+export const BOARD_POS = new THREE.Vector3(0, 3.2, 0);
 
-// The split-flap clock behind and to the left of the board.
-export const CLOCK = { pos: new THREE.Vector3(-5, 1.25, -7), module: 1.15 };
-export const clockSlot = (i: number) => CLOCK.pos.clone().add(new THREE.Vector3((i - 2.5) * CLOCK.module, 0, 0.32));
+// A Pokémon card is 63 x 88 mm; the scans are 600 x 825.
+export const CARD = { w: 6.3, h: 6.3 * (825 / 600) };
 
-// The long box: one card per distinct name, in alphabetical order.
-export const BOX = { x0: -37, z: 3, pitch: 0.04, height: 3.0, width: 3.0 };
-export const BOX_LEN = NAMES.length * BOX.pitch + 1.2;
-export const CARD = { w: 2.5, h: 3.5, t: 0.018 };
-export const cardX = (i: number) => BOX.x0 + 0.6 + i * BOX.pitch;
-export const CARD_Y = 0.12 + CARD.h / 2;
+// The card lifted off the screen floats to the board's left.
+export const LIFT = { pos: new THREE.Vector3(-6.2, 4.4, -0.8), rotY: 0.32 };
 
-// The proof mosaic: 224 clips, 28 columns x 8 rows, in front of the board.
-export const GRID = { cx: 4, cz: 12.5, cols: 28, rows: 8, pitch: 0.92 };
-export const tileXZ = (col: number, row: number) =>
-  [GRID.cx + (col - (GRID.cols - 1) / 2) * GRID.pitch, GRID.cz + (row - (GRID.rows - 1) / 2) * GRID.pitch] as const;
-
-export const BALL = { r: 0.9, z: 1.4, to: 8.4 }; // rolls in from the right
+// Every printing fans out in an arc behind the board.
+export const FAN = { center: new THREE.Vector3(0, 5.2, -11), radius: 15, spread: 0.95 };
+export const fanSlot = (i: number, n: number) => {
+  const a = (i / (n - 1) - 0.5) * FAN.spread;
+  return {
+    pos: new THREE.Vector3(FAN.center.x + Math.sin(a) * FAN.radius, FAN.center.y - Math.abs(a) * 1.2, FAN.center.z + Math.cos(a) * FAN.radius - FAN.radius + 2.5),
+    rotY: -a * 0.8,
+  };
+};

@@ -32,24 +32,21 @@ export const hash = (i: number, salt = 0) => {
 };
 
 const within = (s: number, [a, b]: readonly number[]) => s >= a && s < b;
-export const kickOn = (s: number) =>
-  within(s, SECTIONS.pull) || within(s, SECTIONS.deliver) || within(s, SECTIONS.proof) ||
-  (within(s, SECTIONS.wrong) && s < CUE.rewind);
+export const kickOn = (s: number) => within(s, SECTIONS.first) || within(s, SECTIONS.flip) || within(s, SECTIONS.fan);
 
 // 1 on each kick, decaying before the next.
 export function kick(s: number) {
   if (!kickOn(s)) return 0;
-  if (within(s, SECTIONS.wrong) && Math.round(s / BEAT) % 2 === 1) return 0; // half-time
   return Math.exp(-(((s % BEAT) + BEAT) % BEAT) / 0.11);
 }
 
 export const IMPACTS: [number, number][] = [
-  [CUE.wrong, 0.6],
-  [CUE.buzz, 0.5],
-  [CUE.drop, 1.2],
-  [CUE.pull, 0.9],
-  [CUE.oldPass, 0.9],
-  [CUE.newPass, 1.4],
+  [CUE.press, 0.3],
+  [CUE.result, 1.0],
+  [CUE.presses[0], 0.4],
+  [CUE.presses[1], 0.4],
+  [CUE.owned, 0.9],
+  [CUE.fan, 0.8],
   [CUE.lockup, 0.7],
 ];
 
@@ -60,9 +57,9 @@ export function shake(s: number) {
     const d = s - t;
     if (d < 0 || d > 0.7) continue;
     const e = a * Math.exp(-d / 0.13);
-    x += Math.sin(d * 91 + t) * 22 * e;
-    y += Math.cos(d * 77 + t * 3) * 16 * e;
-    r += Math.sin(d * 53 + t) * 0.6 * e;
+    x += Math.sin(d * 91 + t) * 14 * e;
+    y += Math.cos(d * 77 + t * 3) * 10 * e;
+    r += Math.sin(d * 53 + t) * 0.35 * e;
   }
   return { x, y, r };
 }

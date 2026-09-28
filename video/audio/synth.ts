@@ -1,14 +1,12 @@
 // Synthesizes the soundtrack from the cue sheet: a 120 BPM chip-pop bed plus
-// one sound per on-screen event, and the spoken "Gengar" (macOS `say`, the
-// same voice the benchmark used) at its cue. Writes public/raw.wav;
-// master.ts loudnorms it.
+// one sound per on-screen event, and the spoken "Venusaur" (macOS `say`) at
+// its cue. Writes public/raw.wav; master.ts loudnorms it. The film also reads
+// with the sound off.
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BAR, BEAT, CUE, DURATION, PREROLL, SECTIONS, SONG_END, SPOKEN } from "../src/cues.ts";
-import { FLIPS } from "../src/flaps.ts";
-import { TILE_COUNT, newWave, oldWave, tileCell, tileLand } from "../src/tiles.ts";
 
 const SR = 48000;
 const N = Math.ceil(DURATION * SR);
@@ -58,21 +56,17 @@ const square = (ph: number, duty = 0.5) => (ph - Math.floor(ph) < duty ? 1 : -1)
 const env = (t: number, a: number, d: number) => (t < a ? t / a : Math.exp(-(t - a) / d));
 
 // ---------- arrangement ----------
-// vi–IV–I–V in C (Am F C G), one chord per bar.
+// I–V–vi–IV in D, one chord per bar: bright, a little heroic.
 const CHORDS = [
-  { root: 45, notes: [57, 60, 64, 69] },
-  { root: 41, notes: [57, 60, 65, 69] },
-  { root: 36, notes: [55, 60, 64, 67] },
-  { root: 43, notes: [55, 59, 62, 67] },
+  { root: 38, notes: [62, 66, 69, 74] },
+  { root: 45, notes: [61, 64, 69, 73] },
+  { root: 47, notes: [62, 66, 71, 74] },
+  { root: 43, notes: [62, 67, 71, 74] },
 ];
 const chordAt = (s: number) => CHORDS[Math.floor(Math.max(0, s) / BAR) % 4];
-const full = (s: number) => inRange(s, SECTIONS.pull) || inRange(s, SECTIONS.deliver) || inRange(s, SECTIONS.proof);
-const half = (s: number) => inRange(s, SECTIONS.wrong) && s < CUE.rewind;
+const full = (s: number) => inRange(s, SECTIONS.first) || inRange(s, SECTIONS.flip) || inRange(s, SECTIONS.fan);
 const kicks: number[] = [];
-for (let s = 0; s < SONG_END; s += BEAT) {
-  const b = Math.round(s / BEAT);
-  if (full(s) || (half(s) && b % 2 === 0)) kicks.push(s);
-}
+for (let s = 0; s < SONG_END; s += BEAT) if (full(s)) kicks.push(s);
 function duck(s: number) {
   let last = -1;
   for (const k of kicks) if (k <= s) last = k; else break;
@@ -182,33 +176,15 @@ function tick(s: number, pitch = 1, gain = 1, pan = 0) {
   const bp = svf("bp", 3);
   place(s, 0.03, (_, t) => (bp(noise(), 3200 * pitch) * 2 + Math.sin(2 * Math.PI * 2600 * pitch * t) * 0.5) * env(t, 0.0005, 0.006), 0.26 * gain, pan);
 }
-// A split-flap leaf slapping down: plastic click with a little body.
-function clack(s: number, gain = 1, pan = 0) {
-  const bp = svf("bp", 2.2);
-  const f0 = 900 + noise() * 200;
-  place(s, 0.05, (_, t) => (bp(noise(), f0 + 1500) * 1.6 + Math.sin(2 * Math.PI * f0 * 0.3 * t) * 0.6) * env(t, 0.0003, 0.007), 0.3 * gain, pan);
-}
 function buzzer(s: number, dur: number) {
   const lp = svf("lp", 1.2);
   place(s, dur, (_, t) => lp(square(hz(40) * t) + square(hz(40.3) * t) + square(hz(47) * t) * 0.6, 1600) * env(t, 0.005, dur * 0.8) * (t < dur - 0.03 ? 1 : 0.3), 0.3, 0, 0.2);
-}
-function tapeRewind(s: number, dur: number) {
-  const bp = svf("bp", 3);
-  place(s, dur, (_, t) => {
-    const p = t / dur;
-    const f = 2400 * (1 - p * 0.8) + 300 * Math.sin(t * 90);
-    return bp(noise(), f) * 1.4 * Math.sin(Math.PI * p) + saw(hz(70 - 30 * p) * t) * 0.15 * (1 - p);
-  }, 0.4, 0, 0.3);
 }
 function checkBlip(s: number, gain = 1) {
   place(s, 0.22, (_, t) => {
     const f = t < 0.06 ? hz(84) : hz(88);
     return square(f * t, 0.5) * env(t < 0.06 ? t : t - 0.06, 0.002, 0.05) * 0.5;
   }, 0.3 * gain, 0.1, 0.4);
-}
-function stamp(s: number) {
-  const lp = svf("lp", 1);
-  place(s, 0.3, (_, t) => lp(Math.sign(Math.sin(2 * Math.PI * 110 * Math.exp(-t / 0.2) * t)) + noise() * 0.4, 1200) * env(t, 0.001, 0.07), 0.5, 0, 0.2);
 }
 function ding(s: number, midi = 96, gain = 1) {
   place(s, 1.6, (_, t) => {
@@ -221,18 +197,6 @@ function sparkle(s: number, midi = 100, gain = 1, pan = 0) {
 }
 function subDrop(s: number, gain = 1) {
   place(s, 1.2, (_, t) => Math.sin(2 * Math.PI * (28 * t + 40 * 0.4 * (1 - Math.exp(-t / 0.4)))) * env(t, 0.005, 0.5), 0.6 * gain);
-}
-function rumble(s: number, dur: number, gain = 1) {
-  const lp = svf("lp", 0.8);
-  place(s, dur, (_, t) => lp(noise(), 110 + 260 * Math.abs(Math.sin(t * 9))) * 3 * Math.sin(Math.PI * Math.min(1, t / dur)), 0.45 * gain);
-}
-// Serial data: a fast 8-bit chirp stream.
-function data(s0: number, s1: number, gain = 1) {
-  place(s0, s1 - s0, (i, t) => {
-    const step = Math.floor(t * 90);
-    const f = 1200 + ((step * 7919) % 13) * 180;
-    return square(f * t, 0.5) * 0.4 * (0.6 + 0.4 * Math.sin(t * 40)) * Math.min(1, t / 0.02, (s1 - s0 - t) / 0.03);
-  }, 0.12 * gain, 0.2, 0.2);
 }
 
 // ---------- the spoken input ----------
@@ -258,134 +222,86 @@ function spoken(s: number, text: string, gain = 1) {
 }
 
 // ---------- the bed ----------
-for (const k of kicks) kick(k, [CUE.drop, CUE.oldPass, CUE.newPass].some((t) => Math.abs(t - k) < 0.01) ? 1.2 : 1);
+for (const k of kicks) kick(k, [CUE.result, CUE.owned, CUE.fan].some((t) => Math.abs(t - k) < 0.01) ? 1.2 : 1);
 for (let s = 0; s < SONG_END; s += BEAT) {
   const beat = Math.round(s / BEAT) % 4;
   if (full(s) && (beat === 1 || beat === 3)) clap(s);
-  if (half(s) && beat === 2) clap(s, 0.8);
-  // Heartbeat while listening.
-  if (inRange(s, SECTIONS.listen) && s > 0.4 && beat % 2 === 0) place(s, 0.3, (_, t) => Math.sin(2 * Math.PI * 52 * t) * env(t, 0.004, 0.09), 0.45);
 }
 for (let s = 0; s < SONG_END; s += BEAT / 4) {
   const sixteenth = Math.round(s / (BEAT / 4)) % 4;
   if (full(s)) {
     if (sixteenth === 2) hat(s, true, 0.8, 0.2);
     else hat(s, false, sixteenth === 0 ? 0.5 : 0.75, -0.25);
-  } else if (half(s) && sixteenth === 2) hat(s, false, 0.6, 0.2);
-  else if (inRange(s, SECTIONS.outro) && s < CUE.lockup && sixteenth === 2) hat(s, false, 0.35, 0.2);
-}
-// Snare roll through the build.
-for (let s = SECTIONS.build[0]; s < SECTIONS.build[1]; ) {
-  const p = (s - SECTIONS.build[0]) / (SECTIONS.build[1] - SECTIONS.build[0]);
-  clap(s, 0.3 + 0.7 * p);
-  s += p < 0.5 ? BEAT : p < 0.75 ? BEAT / 2 : BEAT / 4;
+  } else if (s >= CUE.press && s < CUE.result && sixteenth === 2) hat(s, false, 0.5, 0.2);
 }
 for (let s = 0; s < SONG_END; s += BEAT / 2) {
-  if (!full(s) && !half(s)) continue;
+  if (!full(s)) continue;
   const { root } = chordAt(s);
-  const off = Math.round(s / (BEAT / 2)) % 2 === 1;
-  bassNote(s, root + (off ? 12 : 0), BEAT / 2);
+  bassNote(s, root + (Math.round(s / (BEAT / 2)) % 2 ? 12 : 0), BEAT / 2);
 }
 pad(0, SONG_END, (s) => {
-  if (s < 4) return 280 + 900 * (s / 4) ** 2;
-  if (inRange(s, SECTIONS.wrong)) return s < CUE.rewind ? 900 : 900 + 3500 * ((s - CUE.rewind) / 1) ** 2;
-  if (inRange(s, SECTIONS.build)) return 1500 + 3500 * ((s - 18) / 2) ** 2;
+  if (s < CUE.result) return 400 + 1800 * (s / CUE.result) ** 2;
   if (s >= CUE.lockup) return 3200;
   return 2600;
 }, 1);
-// Arp in the drops.
-for (let s = 0; s < CUE.lockup; s += BEAT / 4) {
-  const soft = inRange(s, SECTIONS.outro) || inRange(s, SECTIONS.build);
-  if (!full(s) && !soft) continue;
+for (let s = CUE.result; s < CUE.lockup; s += BEAT / 4) {
   const { notes } = chordAt(s);
   const i = Math.round(s / (BEAT / 4));
-  pluck(s, notes[[0, 1, 2, 3, 2, 1, 3, 2][i % 8]] + 12, soft ? 0.08 : 0.11, soft ? 1500 : 3200, i % 2 ? 0.35 : -0.35);
+  pluck(s, notes[[0, 1, 2, 3, 2, 1, 3, 2][i % 8]] + 12, 0.1, 3200, i % 2 ? 0.35 : -0.35);
 }
-// Chip lead: an original two-bar hook over the chords, in the pull and the proof.
-const HOOK: [number, number, number][] = [ // [beat offset, scale step, length in beats]
+// Chip lead: an original two-bar hook in the flip and the fan.
+const HOOK: [number, number, number][] = [
   [0, 4, 0.5], [0.5, 2, 0.5], [1, 4, 0.5], [1.5, 5, 0.5], [2, 7, 1], [3, 5, 0.5], [3.5, 4, 0.5],
   [4, 2, 0.5], [4.5, 4, 0.5], [5, 2, 0.5], [5.5, 0, 0.5], [6, 1, 1.5],
 ];
-const SCALE = [69, 71, 72, 74, 76, 77, 79, 81]; // A minor
-for (const [s0, s1] of [[CUE.drop, CUE.toDevice], [CUE.newPass, SECTIONS.proof[1]]] as const) {
-  for (let base = s0; base < s1 - 0.01; base += BAR * 2) {
-    for (const [b, step, len] of HOOK) {
-      const s = base + b * BEAT;
-      if (s >= s1) break;
-      chip(s, SCALE[step], len * BEAT * 0.9, 0.07, -0.15);
-      chip(s + 0.004, SCALE[step] - 12, len * BEAT * 0.9, 0.035, 0.2, 0.5);
-    }
+const SCALE = [74, 76, 78, 79, 81, 83, 85, 86]; // D major
+for (let base = CUE.presses[0]; base < CUE.lockup - 0.01; base += BAR * 2) {
+  for (const [b, step, len] of HOOK) {
+    const s = base + b * BEAT;
+    if (s >= CUE.lockup) break;
+    chip(s, SCALE[step], len * BEAT * 0.9, 0.06, -0.15);
   }
 }
 
 // ---------- cue sounds ----------
 whoosh(-PREROLL, PREROLL + 0.05, 0.8);
-// 1 · Listen
+whoosh(CUE.arrive, 1.1, 0.9);
 tick(CUE.press, 0.7, 1.4);
 pop(CUE.press, 0.7, 1.2);
-spoken(CUE.voice, SPOKEN);
-pop(CUE.release, 1.2, 1.2);
-whoosh(CUE.release, 1.4, 1.1);
-riser(CUE.riser1[0], CUE.riser1[1], 0.9);
-// 2 · Wrong: every flap clacks; landings hit harder.
-impact(CUE.wrong, 0.5);
-FLIPS.forEach((flips, m) => flips.forEach((f) => clack(f.t + 0.02, f.land ? 1.8 : 0.55, (m - 2.5) / 4)));
-buzzer(CUE.buzz, 0.55);
-tapeRewind(CUE.rewind, 0.9);
-riser(CUE.riser2[0], CUE.riser2[1], 1.1);
-// 3 · The pull
-impact(CUE.drop, 1.2);
-subDrop(CUE.drop);
-whoosh(CUE.scan[0] - 0.1, CUE.scan[1] - CUE.scan[0] + 0.2, 0.9);
-for (let i = 0; i < 18; i++) tick(CUE.scan[0] + ((i + 0.5) / 18) * (CUE.scan[1] - CUE.scan[0]), 0.9 + i * 0.02, 0.7, -0.6 + (i / 18) * 1.2);
-for (let r = 0; r < 48; r++) pluck(CUE.shortlist + (r / 48) * 1.4, CHORDS[1].notes[r % 4] + 12 + 12 * Math.floor(r / 16), 0.07, 4000, ((r % 5) - 2) / 3);
-CUE.finalists.forEach((s, i) => { pop(s, 0.7 + i * 0.15, 1.3); tick(s, 1.2 + i * 0.1); });
-impact(CUE.pull, 0.9);
-whoosh(CUE.pull - 0.05, 0.5, 1.2);
-[0, 0.06, 0.12, 0.2].forEach((d, i) => sparkle(CUE.pull + d, 96 + i * 3, 1.3, (i - 1.5) / 2));
-whoosh(CUE.flip, 0.6, 0.8);
-ding(CUE.flip + 0.1, 93, 0.9);
-// 4 · Deliver
-whoosh(CUE.toDevice - 0.05, 0.5, 1.2);
-stamp(CUE.toDevice + 0.45);
-data(CUE.rows[0], CUE.rows[1]);
-pop(CUE.labels[0], 1.0, 1.1);
-checkBlip(CUE.labels[1], 1.3);
-pop(CUE.labels[2], 1.15, 0.9);
-stamp(CUE.labels[3]);
-pop(CUE.labels[3], 1.3, 0.8);
-CUE.presses.forEach((s) => { tick(s, 0.6, 1.6, 0.4); checkBlip(s + 0.03, 0.6); });
-// 5 · Build: tiles land (grouped so the clatter stays musical).
-for (let k = 0; k < TILE_COUNT; k += 3) tick(tileLand(k), 0.8 + (tileCell(k).row / 8) * 0.5, 0.5, (tileCell(k).col - 14) / 16);
-riser(CUE.riser3[0], CUE.riser3[1], 1.2);
-// 6 · Proof
-impact(CUE.oldPass, 0.9);
-buzzer(CUE.oldPass + 0.05, 0.35);
-for (let c = 0; c < 28; c += 2) clack(oldWave(c), 0.5, (c - 14) / 16);
-for (let c = 0; c < 28; c += 2) pluck(newWave(c), SCALE[Math.floor(c / 4)] + 12, 0.09, 4500, (c - 14) / 16);
-impact(CUE.newPass, 1.4);
-subDrop(CUE.newPass, 1.1);
-for (const n of CHORDS[2].notes) chip(CUE.newPass, n + 12, 0.8, 0.05);
-pop(CUE.disclosure, 0.9, 0.6);
-whoosh(CUE.misses[0] - 0.9, 0.9, 0.8, false);
-CUE.misses.forEach((s, i) => { pop(s, 0.6 + i * 0.08, 1.2, 0.3); tick(s, 0.7, 0.8); });
-// Letters that miss: a low blip each as the ghosted GENGAR appears.
-[0, 1, 4, 5].forEach((m, i) => checkBlip(CUE.buzz + 0.1 + i * 0.06, 0.25));
-// 7 · Outro
-riser(CUE.outro - 0.5, CUE.outro, 0.4);
-rumble(CUE.roll[0], CUE.roll[1] - CUE.roll[0] + 0.2);
-tick(CUE.roll[1], 0.5, 1.5);
+whoosh(CUE.word - 0.1, 0.9, 0.7, false);
+spoken(CUE.word, SPOKEN);
+pop(CUE.release, 1.2, 1.0);
+riser(CUE.search, CUE.result, 0.8);
+for (let s = CUE.search; s < CUE.result - 0.1; s += 0.25) tick(s, 1.1, 0.35);
+impact(CUE.result, 0.9);
+subDrop(CUE.result, 0.8);
+whoosh(CUE.lift, 0.6, 1.0);
+sparkle(CUE.lift + 0.1, 96, 1.2);
+buzzer(CUE.notOwned, 0.18);
+pop(CUE.price, 1.1, 1.1);
+tick(CUE.price + 0.02, 1.4, 0.8);
+CUE.presses.forEach((s) => { tick(s, 0.6, 1.6, 0.4); checkBlip(s + 0.02, 0.7); whoosh(s, 0.35, 0.6); });
+checkBlip(CUE.presses[0] + 0.2, 0.25);
+impact(CUE.owned, 0.6);
+[0, 0.06, 0.12, 0.2].forEach((d, i) => sparkle(CUE.owned + d, 93 + i * 3, 1.3, (i - 1.5) / 2));
+ding(CUE.owned + 0.05, 93, 1.0);
+impact(CUE.fan, 0.7);
+for (let i = 0; i < 9; i++) pluck(CUE.fan + 0.1 + Math.abs(i - 4) * CUE.fanStep, CHORDS[0].notes[i % 4] + 12, 0.1, 4500, (i - 4) / 5);
+sparkle(CUE.fanOwned + 0.1, 98, 1.2);
+checkBlip(CUE.fanOwned, 1.0);
+for (let i = 0; i < 9; i++) tick(CUE.fanLine + i * 0.06, 1 + i * 0.05, 0.6, (i - 4) / 5);
+riser(CUE.lockup - 0.6, CUE.lockup, 0.4);
 impact(CUE.lockup, 0.8);
 subDrop(CUE.lockup, 0.7);
-ding(CUE.lockup + 0.05, 96, 1.1);
+ding(CUE.lockup + 0.05, 98, 1.1);
 pop(CUE.lockTag, 1);
+pop(CUE.lockVault, 1.15);
 pop(CUE.lockUrl, 1.3);
-for (const n of CHORDS[2].notes) pluck(CUE.finalHit, n + 12, 0.2, 5000, 0);
-chip(CUE.finalHit, 84, 0.25, 0.08);
-chip(CUE.finalHit + 0.25, 88, 0.25, 0.08);
-chip(CUE.finalHit + 0.5, 91, 0.8, 0.08);
-bassNote(CUE.finalHit, 36, 1.2);
-impact(CUE.finalHit, 0.4);
+for (const n of CHORDS[0].notes) pluck(CUE.finalHit, n + 12, 0.2, 5000, 0);
+chip(CUE.finalHit, 86, 0.25, 0.07);
+chip(CUE.finalHit + 0.25, 90, 0.25, 0.07);
+chip(CUE.finalHit + 0.5, 93, 0.8, 0.07);
+bassNote(CUE.finalHit, 38, 1.2);
 
 // ---------- reverb (small Schroeder) + mixdown ----------
 function reverb(inp: Float32Array, spread: number) {

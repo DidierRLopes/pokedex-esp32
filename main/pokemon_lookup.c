@@ -1278,6 +1278,8 @@ static void image_failed(const char *card_id)
 /* Serial receive                                                      */
 /* ------------------------------------------------------------------ */
 
+static void send_snapshot(void);
+
 static void test_release_timer(lv_timer_t *timer)
 {
     (void)timer;  /* one-shot: LVGL deletes it after this run */
@@ -1290,6 +1292,7 @@ static void test_release_timer(lv_timer_t *timer)
  *   @TEST NAV <1|-1>     same as pressing PWR (next) / BOOT (previous)
  *   @TEST HOLD <ms>      same as holding the screen for <ms> (real microphone)
  *   @TEST STATE          logs "@STATE ..." for the test to check
+ *   @TEST SNAPSHOT       sends the screen's pixels (see send_snapshot)
  */
 static void handle_test_command(const char *command)
 {
@@ -1301,6 +1304,8 @@ static void handle_test_command(const char *command)
         request_record_start();
         lv_timer_t *release = lv_timer_create(test_release_timer, atoi(command + 5), NULL);
         lv_timer_set_repeat_count(release, 1);
+    } else if (strcmp(command, "SNAPSHOT") == 0) {
+        send_snapshot();
     } else if (strcmp(command, "STATE") == 0) {
         char line[160];
         snprintf(line, sizeof(line), "@STATE %d %d/%d %s ram_min=%u canvas=%d",
@@ -1310,6 +1315,51 @@ static void handle_test_command(const char *command)
                  !lv_obj_has_flag(s_canvas, LV_OBJ_FLAG_HIDDEN));
         serial_send_line(line);
     }
+}
+
+/*
+ * Pixel-exact capture of what is on the panel (docs, videos):
+ *   @SNAP <w> <h> <stride> / @SNAPDATA <b64 RGB565>... / @SNAPEND
+ * Runs on the control task with the display lock held.
+ */
+static void send_snapshot(void)
+{
+    static lv_draw_buf_t snap;
+    static uint8_t *pixels;
+    lv_display_t *display = lv_display_get_default();
+    const uint32_t w = lv_display_get_horizontal_resolution(display);
+    const uint32_t h = lv_display_get_vertical_resolution(display);
+    const uint32_t stride = lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_RGB565);
+    if (pixels == NULL) {
+        pixels = heap_caps_malloc(stride * h, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (pixels == NULL ||
+            lv_draw_buf_init(&snap, w, h, LV_COLOR_FORMAT_RGB565, stride, pixels, stride * h) != LV_RESULT_OK) {
+            pixels = NULL;
+            serial_send_line("@SNAPERR");
+            return;
+        }
+    }
+    if (lv_snapshot_take_to_draw_buf(lv_screen_active(), LV_COLOR_FORMAT_RGB565, &snap) != LV_RESULT_OK) {
+        serial_send_line("@SNAPERR");
+        return;
+    }
+
+    static uint8_t line[10 + 4100 + 2];  /* "@SNAPDATA " + base64(3072) + "\n" */
+    const size_t total = stride * h, raw_chunk = 3072;
+    const TickType_t timeout = pdMS_TO_TICKS(2000);
+    xSemaphoreTakeRecursive(s_serial_mutex, portMAX_DELAY);
+    int length = snprintf((char *)line, sizeof(line), "@SNAP %u %u %u\n", (unsigned)w, (unsigned)h, (unsigned)stride);
+    bool ok = serial_write(line, (size_t)length, timeout);
+    for (size_t offset = 0; ok && offset < total; offset += raw_chunk) {
+        const size_t chunk = total - offset > raw_chunk ? raw_chunk : total - offset;
+        size_t encoded = 0;
+        memcpy(line, "@SNAPDATA ", 10);
+        if (mbedtls_base64_encode(line + 10, sizeof(line) - 12, &encoded, pixels + offset, chunk) != 0) break;
+        line[10 + encoded] = '\n';
+        ok = serial_write(line, 10 + encoded + 1, timeout);
+    }
+    serial_write("@SNAPEND\n", 9, timeout);
+    xSemaphoreGiveRecursive(s_serial_mutex);
 }
 
 static bool decode_b64_text(const char *payload, char *out, size_t out_size)
