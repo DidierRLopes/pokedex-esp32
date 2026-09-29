@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """PokeDex companion for the ESP32-S3 AMOLED card lookup.
 
-Receives microphone audio from the board over USB serial, recognizes the card
-name with local Whisper (English) by choosing among the catalog's card names,
-searches the vintage card catalog from the pokemon-website project, and
-streams card artwork back as RGB565.
+Receives microphone audio from the board, recognizes the card name with local
+Whisper (English) by choosing among the catalog's card names, searches the
+vintage card catalog from the pokemon-website project, and streams card
+artwork back as RGB565.
+
+The board reaches it over USB serial, or with --listen over a WebSocket (the
+Wi-Fi firmware build). Both links carry the same newline-separated protocol;
+over the network each text frame holds bytes of it, and the board presents a
+shared token (X-PokeDex-Token header or ?token=; a wrong one is closed 4001).
 
 Protocol v2 (mirrors firmware main/pokemon_lookup.c):
   ESP32 -> Mac:  @HELLO <version>                        (board booted)
@@ -17,6 +22,9 @@ Protocol v2 (mirrors firmware main/pokemon_lookup.c):
                  @RESULT <b64 json {transcript, matches:[...]}>
                  @IMG <cardId> <w> <h> + @DATA <b64 rgb565> ... + @IMGEND <cardId>
                  @IMGERR <cardId>
+                 @TEST <command>                         (test hooks: handle_test_command)
+  ESP32 -> Mac:  @SNAP <w> <h> <stride> / @SNAPDATA <b64> ... / @SNAPEND
+                                                         (screen capture, for @TEST SNAPSHOT)
 """
 import argparse
 import asyncio

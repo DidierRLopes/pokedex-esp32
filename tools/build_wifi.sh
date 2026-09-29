@@ -9,6 +9,10 @@ if [ ! -f sdkconfig.defaults.wifi.local ]; then
   echo "Missing sdkconfig.defaults.wifi.local: copy sdkconfig.defaults.wifi.local.example and fill it in." >&2
   exit 1
 fi
+# Regenerate the Wi-Fi sdkconfig from the defaults every time: an existing
+# sdkconfig.wifi would keep old values and silently ignore edits to the
+# local file (new URL, token or network).
+rm -f sdkconfig.wifi
 source tools/idf_env.sh
 PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1 || true)
 idf.py -B build-wifi -D SDKCONFIG=sdkconfig.wifi \

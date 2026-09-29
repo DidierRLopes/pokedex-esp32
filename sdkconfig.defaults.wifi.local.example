@@ -1,12 +1,16 @@
-# Copy to sdkconfig.defaults.wifi.local (git-ignored) and fill in.
-# The ESP32-S3 only speaks 2.4 GHz: on iPhone turn on Personal Hotspot >
-# "Maximize Compatibility".
-CONFIG_POKEDEX_WIFI_SSID="Your iPhone"
-CONFIG_POKEDEX_WIFI_PASSWORD="hotspot-password"
-# Optional second network, tried when the first isn't around (e.g. home):
-CONFIG_POKEDEX_WIFI_SSID2=""
-CONFIG_POKEDEX_WIFI_PASSWORD2=""
-# The companion on the Mac mini, published with `tailscale funnel`:
+# Copy to sdkconfig.defaults.wifi.local (git-ignored), fill in, then
+# tools/build_wifi.sh flash. See README "Setup B".
+#
+# The board tries the first network and alternates with the second until one
+# joins: put home first and the iPhone hotspot second. The ESP32-S3 only
+# speaks 2.4 GHz: on iPhone turn on Personal Hotspot > "Maximize Compatibility".
+# The hotspot's name is the iPhone's name and must match exactly.
+CONFIG_POKEDEX_WIFI_SSID="Home network"
+CONFIG_POKEDEX_WIFI_PASSWORD="home-password"
+CONFIG_POKEDEX_WIFI_SSID2="Your iPhone"
+CONFIG_POKEDEX_WIFI_PASSWORD2="hotspot-password"
+# The companion: the Mac mini published with `tailscale funnel` (wss://), or
+# ws://<a Mac's LAN IP>:8765/ for local testing.
 CONFIG_POKEDEX_SERVER_URL="wss://mac-mini.your-tailnet.ts.net/"
-# Same value as the companion's --token / ~/.pokedex-token:
+# Same value as ~/.pokedex-token on the companion's Mac:
 CONFIG_POKEDEX_TOKEN="paste-the-shared-token"
