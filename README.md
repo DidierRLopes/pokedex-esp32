@@ -11,10 +11,11 @@ board (screen, mic, buttons) ◀── one line protocol ──▶ companion on 
                                   over USB, or over Wi-Fi     Whisper · catalog · Pokévault · prices · art
 ```
 
-- **Why a Mac:** the speech model (Whisper `small.en`) runs on Apple's MLX, which needs Apple Silicon. The ESP32 has nowhere near the power for it.
-- **Why "pick a name" instead of "transcribe":** free transcription snaps unusual names onto common words ("Gengar" → "Jungle"). The companion instead scores every card name in the catalog against the recording, then transcribes only the words after the name ("base", "two"). On the voice benchmark this took accuracy from 46% to 99% (synthetic voices; details in [`video/README.md`](video/README.md)).
-- **One protocol, two links:** USB serial and the WebSocket carry the same newline-separated messages, so the companion runs the same session code for either. The message set is documented once, at the top of [`host/pokemon_bridge.py`](host/pokemon_bridge.py).
-- **Data sources:** cards come from a `pokemon-website` checkout (or a saved snapshot); ✓/✗ mirrors your Pokévault collection every 5 minutes; prices come from TCGplayer data via the psapop API, with the catalog's prices as the offline fallback. Account names and paths are options: see `host/pokemon_bridge.py --help`.
+The board records while you hold the screen and sends the clip to the companion. The companion's Whisper model (Apple MLX, so Apple Silicon) picks which card name best matches the sound instead of transcribing freely, which is what makes odd names like "Gengar" work. It then searches the catalog, adds whether you own each printing and its price, and sends back the results and card art.
+
+**[docs/how-it-works.md](docs/how-it-works.md)** walks through the whole trip step by step, with diagrams: recording, the three Whisper passes, search and enrichment, and how images reach the screen.
+
+Account names, paths and other options: `host/pokemon_bridge.py --help`.
 
 ## Two ways to run it
 
@@ -147,4 +148,5 @@ Any Mac can stand in for the Mac mini while you test the firmware, with no Tails
   - `Kconfig.projbuild`: the Wi-Fi build's settings.
 - `host/`: the companion (`pokemon_bridge.py`), tests and tools; `host/macmini/`: the Mac mini service.
 - `tools/`: `idf_env.sh` loads ESP-IDF; `build_wifi.sh` builds and flashes the Wi-Fi variant.
+- `docs/`: deeper explanations ([how it works](docs/how-it-works.md)).
 - `video/`: the demo video, built from real board captures.
