@@ -31,7 +31,12 @@ export const Headers: React.FC<{ s: number }> = ({ s }) => (
     <Line s={s} at={0.3} until={CUE.search}><Dot color={C.listen} />Hold the screen. Say a card.</Line>
     <Line s={s} at={CUE.result + 0.1} until={CUE.presses[0] - 0.1}><Dot color={C.amber} />The card, if you own it, what it costs.</Line>
     <Line s={s} at={CUE.presses[0]} until={CUE.fan}><Key>PWR</Key>next printing</Line>
-    <Line s={s} at={CUE.fan + 0.2} until={CUE.lockup}><Dot color={C.owned} />All {RESULTS.length} {SPOKEN} printings, owned or not, priced.</Line>
+    <Line s={s} at={CUE.fan + 0.2} until={CUE.connect}><Dot color={C.owned} />All {RESULTS.length} {SPOKEN} printings, owned or not, priced.</Line>
+    <Line s={s} at={CUE.connect + 0.1} until={CUE.rings[0] - 0.05}><Dot color={C.lilac} />At a card show? No laptop.</Line>
+    <Line s={s} at={CUE.rings[0]} until={CUE.launch - 0.05}><Dot color={C.violet} />Wi-Fi to your phone's hotspot</Line>
+    <Line s={s} at={CUE.launch} until={CUE.atMac - 0.1}><Dot color={C.owned} />Across the internet, through Tailscale Funnel</Line>
+    <Line s={s} at={CUE.atMac - 0.05} until={CUE.reply}><Dot color={C.amber} />Your Mac mini at home does the work</Line>
+    <Line s={s} at={CUE.reply + 0.05} until={CUE.lockup}><Dot color={C.owned} />…and the answer comes back to the board.</Line>
   </>
 );
 
@@ -81,7 +86,7 @@ export const Lockup: React.FC<{ s: number }> = ({ s }) => {
       </div>
       <div style={{ position: "absolute", bottom: 64, textAlign: "center", ...rise(CUE.lockUrl) }}>
         <div style={{ fontFamily: MONO, fontSize: 36, fontWeight: 500, color: C.white }}>github.com/DidierRLopes/pokedex-esp32</div>
-        <div style={{ fontSize: 22, fontWeight: 600, color: C.muted, marginTop: 10, letterSpacing: 0.5 }}>ESP32-S3 AMOLED board · voice recognized by Whisper on your Mac, over USB</div>
+        <div style={{ fontSize: 22, fontWeight: 600, color: C.muted, marginTop: 10, letterSpacing: 0.5 }}>ESP32-S3 AMOLED board · Whisper on your Mac: over USB at the desk, or a Mac mini via hotspot + Tailscale on the go</div>
       </div>
     </AbsoluteFill>
   );

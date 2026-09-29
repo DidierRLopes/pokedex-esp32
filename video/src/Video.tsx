@@ -18,7 +18,7 @@ export const LaunchVideo: React.FC = () => {
   const { x, y, r } = shake(s);
   const poster = s < 0;
   const posterOut = inCubic(prog(s, -0.02, 0.28));
-  const flashes = [[CUE.result, 0.25], [CUE.owned, 0.3], [CUE.lockup, 0.25]].reduce((a, [t, g]) => a + (s >= t ? g * Math.exp(-(s - t) / 0.07) : 0), 0);
+  const flashes = [[CUE.result, 0.25], [CUE.owned, 0.3], [CUE.gate, 0.2], [CUE.backOnBoard, 0.3], [CUE.lockup, 0.25]].reduce((a, [t, g]) => a + (s >= t ? g * Math.exp(-(s - t) / 0.07) : 0), 0);
   return (
     <AbsoluteFill style={{ overflow: "hidden", background: "#05060d" }}>
       <AbsoluteFill style={{ transform: `translate(${x}px, ${y}px) rotate(${r}deg) scale(1.03)` }}>

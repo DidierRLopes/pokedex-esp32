@@ -49,7 +49,8 @@ export const Post: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) =>
   const focus = poster ? BOARD_POS.clone() : new THREE.Vector3(look[0], look[1], look[2]);
   fx.dof.target = focus;
   const dist = Math.hypot(pos[0] - focus.x, pos[1] - focus.y, pos[2] - focus.z);
-  const wide = prog(s, CUE.fan, CUE.fan + 1) * (poster ? 0 : 1);
+  // Deep focus for the wide shots: the fan and the route home.
+  const wide = Math.max(prog(s, CUE.fan, CUE.fan + 1), prog(s, CUE.atPhone, CUE.launch) * (1 - prog(s, CUE.reply + 0.8, CUE.backOnBoard))) * (poster ? 0 : 1);
   fx.dof.bokehScale = lerp(1.8, 0.5, prog(dist, 9, 22)) * (1 - wide * 0.6);
   fx.bloom.intensity = 0.8 + h * 0.6 + kick(s) * 0.12;
   const ca = 0.0005 + h * 0.003 + kick(s) * 0.0003;

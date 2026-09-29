@@ -1,6 +1,7 @@
 // The camera's flight, keyed on song time. Catmull-Rom through keys keeps it
 // always moving.
 import { CUE } from "../cues.ts";
+import { parcelAt, replyAt } from "./Journey.tsx";
 
 type V3 = [number, number, number];
 type Key = { t: number; pos: V3; look: V3 };
@@ -22,9 +23,22 @@ const KEYS: Key[] = [
   // 5 · Crane up and back: every printing behind the board.
   { t: 13.0, pos: [0.0, 9.8, 42], look: [-0.3, 6.2, -8] },
   { t: 15.8, pos: [0.0, 9.3, 39.5], look: [-0.3, 6.2, -8] },
-  // 6 · Lockup.
-  { t: 17.0, pos: [0.0, 5.4, 21], look: [0.0, 3.9, -4] },
-  { t: 21.0, pos: [0.0, 5.3, 19.5], look: [0.0, 3.9, -4] },
+  // 6 · On the go: down to the board as the laptop cable yanks out and the
+  //     power bank slides in, then out to the phone, up the route, and home.
+  { t: 16.15, pos: [6.0, 5.6, 17], look: [4.0, 2.4, -0.8] },
+  { t: 16.95, pos: [7.5, 5.4, 18.5], look: [4.8, 2.2, -1.0] },
+  { t: 17.8, pos: [9.5, 8.5, 31], look: [8.5, 6.2, -1.5] },
+  { t: 18.6, pos: [20, 22, 40], look: [30, 24, -12] },
+  { t: 19.2, pos: [31, 28, 20], look: [38, 29, -16] },
+  { t: 19.9, pos: [58, 18, 44], look: [66, 11, -8] },
+  { t: 20.9, pos: [62, 17, 42], look: [66, 12, -8] },
+  // The reply whips the whole route back to the board.
+  { t: 21.5, pos: [34, 30, 40], look: [30, 20, -12] },
+  { t: 21.85, pos: [6, 9, 30], look: [4, 6, -1] },
+  { t: 22.15, pos: [-1.0, 5.4, 18], look: [1.5, 3.4, 0] },
+  // 7 · Lockup.
+  { t: 23.5, pos: [0.0, 5.4, 21], look: [0.0, 3.9, -4] },
+  { t: 27.5, pos: [0.0, 5.3, 19.5], look: [0.0, 3.9, -4] },
 ];
 
 const cr = (p0: number, p1: number, p2: number, p3: number, u: number) =>
@@ -49,6 +63,15 @@ export function cameraAt(s: number, poster = false) {
   if (poster) return { pos: [...POSTER_CAM.pos] as V3, look: [...POSTER_CAM.look] as V3 };
   const pos = sample(s, "pos");
   const look = sample(s, "look");
+  // Keep the travelling parcel (and the reply) in frame: aim partly at it.
+  const target = parcelAt(s) ?? replyAt(s);
+  if (target) {
+    // Gentle on the launch (keep the gate framed), firm on the return.
+    const w = s < CUE.atPhone ? 0.35 : s < CUE.atMac ? 0.3 : s >= CUE.reply ? 0.75 : 0.6;
+    look[0] += (target.x - look[0]) * w;
+    look[1] += (target.y - look[1]) * w;
+    look[2] += (target.z - look[2]) * w;
+  }
   const d = s > CUE.lockup ? 0.02 : 0.05;
   pos[0] += Math.sin(s * 1.3) * d;
   pos[1] += Math.sin(s * 1.7 + 1) * d * 0.6;

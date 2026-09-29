@@ -1,6 +1,6 @@
 # Launch video
 
-A ~20 s demo of PokeDex at a card show, made with the
+A ~26 s demo of PokeDex at a card show, made with the
 [launch-video](https://github.com/dzhng/skills) skill. It reads with the sound
 off.
 
@@ -8,7 +8,8 @@ off.
 2. **The answer**: the Poké Ball spins, then 1/9 appears. The real card lifts off the screen, marked not in your Pokévault collection, with its live price.
 3. **Every printing**: PWR steps to 2/9, then 3/9: Base Set 2, already in your collection.
 4. **All of them**: the nine Venusaur printings fan out, each with ✓/✗ and price; the one you own steps forward.
-5. **Lockup**: PokeDex, "Say a card. Know if you own it. Know what to pay.", the GitHub link.
+5. **On the go**: the laptop cable yanks out and a power bank plugs in. The spoken name then travels like a tracked parcel: Wi-Fi to the iPhone hotspot, up across the internet, through the Tailscale Funnel gate (its padlock opens for the token), to the Mac mini at home, where Whisper, the catalog, Pokévault and prices do the work. The answer (the real card, ✓, price) races back along the same route to the board.
+6. **Lockup**: PokeDex, "Say a card. Know if you own it. Know what to pay.", the GitHub link.
 
 ```bash
 npm install
@@ -43,6 +44,7 @@ cd video/public && mkdir -p cards && python3 -c "import json; [print(m['id']) fo
 - Prices are live TCGplayer data (via the psapop API) at capture time; they drift. Recapture before re-rendering if they must be current.
 - ✓/✗ comes from the Pokévault collection the companion mirrors.
 - The result screens came from a typed lookup (`@TEST QUERY`); a spoken lookup shows the same screens. The listening screen is a real capture.
+- The on-the-go section shows the path, not a speed: only the local hotspot link has been measured, never the full cellular path to the Mac mini, so no timing is claimed for it. Its phone, power bank and Mac mini are generic models at real sizes (Mac mini in the M1 form), not product renders.
 - The card art belongs to The Pokémon Company; this video is for internal use.
 
 ## One timing source

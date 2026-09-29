@@ -32,7 +32,8 @@ export const hash = (i: number, salt = 0) => {
 };
 
 const within = (s: number, [a, b]: readonly number[]) => s >= a && s < b;
-export const kickOn = (s: number) => within(s, SECTIONS.first) || within(s, SECTIONS.flip) || within(s, SECTIONS.fan);
+export const kickOn = (s: number) =>
+  within(s, SECTIONS.first) || within(s, SECTIONS.flip) || within(s, SECTIONS.fan) || within(s, SECTIONS.connect);
 
 // 1 on each kick, decaying before the next.
 export function kick(s: number) {
@@ -47,6 +48,11 @@ export const IMPACTS: [number, number][] = [
   [CUE.presses[1], 0.4],
   [CUE.owned, 0.9],
   [CUE.fan, 0.8],
+  [CUE.unplug, 0.5],
+  [CUE.plugIn, 0.35],
+  [CUE.gate, 0.6],
+  [CUE.atMac, 0.7],
+  [CUE.backOnBoard, 0.8],
   [CUE.lockup, 0.7],
 ];
 

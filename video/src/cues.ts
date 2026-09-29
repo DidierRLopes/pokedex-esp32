@@ -7,7 +7,7 @@ export const BEAT = 60 / BPM;
 export const BAR = BEAT * 4;
 export const PREROLL = 0.3;
 export const FPS = 60;
-export const SONG_END = 19.5;
+export const SONG_END = 26.0;
 export const DURATION = PREROLL + SONG_END;
 
 export const SPOKEN = "Venusaur";
@@ -18,7 +18,8 @@ export const SECTIONS = {
   first: [4.5, 8], // 1/9: the real card, not owned, its price
   flip: [8, 12], // PWR steps through printings until the one you own
   fan: [12, 16], // every printing at once
-  lockup: [16, SONG_END],
+  connect: [16, 22.5], // on the go: power bank, hotspot, Funnel, Mac mini, and back
+  lockup: [22.5, SONG_END],
 } as const;
 
 export const CUE = {
@@ -37,11 +38,24 @@ export const CUE = {
   fanStep: 0.125, // one printing per 16th
   fanOwned: 13.5, // the one you own steps forward
   fanLine: 14.25,
-  lockup: 16.0,
-  lockTag: 16.5,
-  lockVault: 17.0,
-  lockUrl: 17.5,
-  finalHit: 18.0,
+  // On the go: the parcel-tracking route from the board to the Mac mini.
+  connect: 16.0,
+  unplug: 16.25, // the laptop cable yanks out
+  bank: 16.55, // a power bank slides in
+  plugIn: 16.9, // its cable snaps into the board
+  rings: [17.1, 17.35, 17.6, 17.85], // Wi-Fi to the hotspot
+  atPhone: 18.0,
+  launch: 18.3, // up the route
+  gate: 19.0, // through Tailscale Funnel: the padlock opens
+  atMac: 19.7, // into the Mac mini at home
+  chips: [19.9, 20.15, 20.4, 20.65], // Whisper · catalog · Pokévault · price
+  reply: 21.0, // the answer leaves the Mac mini
+  backOnBoard: 22.0,
+  lockup: 22.5,
+  lockTag: 23.0,
+  lockVault: 23.5,
+  lockUrl: 24.0,
+  finalHit: 24.5,
 } as const;
 
 // Which captured result (0-based) is on the board's screen.

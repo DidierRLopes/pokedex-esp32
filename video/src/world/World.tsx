@@ -10,11 +10,12 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { CUE, resultAt } from "../cues.ts";
 import { C, H, W } from "../theme.ts";
 import { OWNED_INDEX, RESULTS, cardArt, price } from "../data.ts";
-import { clamp, hash, hit, inOutCubic, kick, lerp, outBack, outCubic, outExpo, prog } from "../anim.ts";
+import { clamp, hash, hit, inCubic, inOutCubic, kick, lerp, outBack, outCubic, outExpo, prog } from "../anim.ts";
 import { FOV, cameraAt } from "./camera.ts";
 import { BOARD, BOARD_POS, CARD, LIFT } from "./layout.ts";
 import { artTex, discTex, matTex, pillAspect, pillTex, screenTex, softTex } from "./textures.ts";
 import { Post } from "./Post.tsx";
+import { BANK, Journey } from "./Journey.tsx";
 
 export const World: React.FC<{ s: number; poster?: boolean }> = ({ s, poster = false }) => (
   <ThreeCanvas width={W} height={H} shadows={{ type: THREE.VSMShadowMap }} gl={{ antialias: false, alpha: false, preserveDrawingBuffer: true, toneMapping: THREE.NoToneMapping, powerPreference: "high-performance" }} camera={{ fov: FOV, near: 0.1, far: 400, position: [0, 5, 20] }}>
@@ -31,7 +32,7 @@ const Scene: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
   scene.environmentIntensity = 0.45;
   const bg = useMemo(() => new THREE.Color("#05060d"), []);
   scene.background = bg;
-  const fog = useMemo(() => new THREE.Fog("#05060d", 45, 140), []);
+  const fog = useMemo(() => new THREE.Fog("#05060d", 70, 220), []);
   scene.fog = fog;
 
   const { pos, look } = cameraAt(s, poster);
@@ -54,6 +55,7 @@ const Scene: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
       <Lifted s={s} poster={poster} />
       <Fan s={s} />
       <Sparks s={s} />
+      {!poster && <Journey s={s} />}
       <Post s={s} poster={poster} />
     </>
   );
@@ -139,7 +141,14 @@ const Board: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
       new THREE.Vector3(BOARD.w / 2 + 6.5, -2.9, -3.5), new THREE.Vector3(BOARD.w / 2 + 8, -3.15, -12), new THREE.Vector3(BOARD.w / 2 + 12, -3.15, -40),
     ]);
     const cable = new THREE.TubeGeometry(curve, 120, 0.17, 12, false);
-    return { body, bodyMat, glass, glassMat, scr, screenMat, button, buttonMat, port, portMat, plug, plugMat, shell, shellMat, cable };
+    // On the go: a short cable down to the power bank on the table.
+    const bankEnd = BANK.pos.clone().sub(BOARD_POS);
+    const bankCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(BOARD.w / 2 + 1.9, 0, 0), new THREE.Vector3(BOARD.w / 2 + 3.2, -0.8, 0.6),
+      new THREE.Vector3(bankEnd.x - 1.5, bankEnd.y + 0.4, bankEnd.z - 3.2), new THREE.Vector3(bankEnd.x - 0.8, bankEnd.y + 0.1, bankEnd.z - 4.2),
+    ]);
+    const bankCable = new THREE.TubeGeometry(bankCurve, 80, 0.15, 10, false);
+    return { body, bodyMat, glass, glassMat, scr, screenMat, button, buttonMat, port, portMat, plug, plugMat, shell, shellMat, cable, bankCable };
   }, []);
   parts.screenMat.map = screenTex(poster ? 99 : s);
   parts.screenMat.needsUpdate = true;
@@ -147,6 +156,8 @@ const Board: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
   const front = BOARD.d / 2;
   const press = poster ? 0 : CUE.presses.reduce((a, t) => a + (s >= t - 0.06 ? Math.exp(-Math.max(0, s - t) / 0.09) * clamp((s - t + 0.06) / 0.06) : 0), 0);
   const x = BOARD.w / 2;
+  const yank = poster ? 0 : inCubic(prog(s, CUE.unplug, CUE.unplug + 0.45));
+  const seat = outBack(prog(s, CUE.plugIn - 0.25, CUE.plugIn), 2);
   return (
     <group position={pos} rotation={[rotX, rotY, 0]}>
       <mesh geometry={parts.body} material={parts.bodyMat} castShadow receiveShadow />
@@ -158,9 +169,21 @@ const Board: React.FC<{ s: number; poster: boolean }> = ({ s, poster }) => {
       <mesh geometry={parts.port} material={parts.portMat} position={[x + 0.005, BOARD.side.usb, 0]} />
       <mesh geometry={parts.button} material={parts.buttonMat} position={[x + 0.04 - press * 0.09, BOARD.side.pwr, 0]} castShadow />
       <PressRing s={s} at={[x + 0.3, BOARD.side.pwr, 0]} />
-      <mesh geometry={parts.shell} material={parts.shellMat} position={[x + 0.3, 0, 0]} />
-      <mesh geometry={parts.plug} material={parts.plugMat} position={[x + 1.25, 0, 0]} castShadow />
-      <mesh geometry={parts.cable} material={parts.plugMat} castShadow />
+      {/* The laptop cable yanks out; the power bank's plugs in. */}
+      {(poster || s < CUE.unplug + 0.45) && (
+        <group position={[yank * 16, -yank * 3, yank * 2]} rotation={[0, 0, -yank * 0.6]}>
+          <mesh geometry={parts.shell} material={parts.shellMat} position={[x + 0.3, 0, 0]} />
+          <mesh geometry={parts.plug} material={parts.plugMat} position={[x + 1.25, 0, 0]} castShadow />
+          <mesh geometry={parts.cable} material={parts.plugMat} castShadow />
+        </group>
+      )}
+      {!poster && s >= CUE.plugIn - 0.25 && (
+        <group position={[(1 - seat) * 2.5, 0, 0]}>
+          <mesh geometry={parts.shell} material={parts.shellMat} position={[x + 0.3, 0, 0]} />
+          <mesh geometry={parts.plug} material={parts.plugMat} position={[x + 1.25, 0, 0]} castShadow />
+          <mesh geometry={parts.bankCable} material={parts.plugMat} castShadow />
+        </group>
+      )}
     </group>
   );
 };
@@ -288,7 +311,8 @@ export function fanPose(i: number, s: number) {
 const Fan: React.FC<{ s: number }> = ({ s }) => {
   const mats = useMemo(() => RESULTS.map((r) => new THREE.MeshPhysicalMaterial({ map: artTex(cardArt(r)), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.2, envMapIntensity: 0.5 })), []);
   if (s < CUE.fan - 0.1) return null;
-  const out = prog(s, CUE.lockup, CUE.lockup + 0.8); // labels go; the cards stay, dimmed
+  if (s > CUE.connect + 0.5 && s < CUE.lockup - 0.3) return null; // off stage for the journey
+  const out = prog(s, CUE.connect, CUE.connect + 0.6); // labels go; the cards stay, dimmed
   return (
     <>
       {RESULTS.map((r, i) => {

@@ -64,7 +64,8 @@ const CHORDS = [
   { root: 43, notes: [62, 67, 71, 74] },
 ];
 const chordAt = (s: number) => CHORDS[Math.floor(Math.max(0, s) / BAR) % 4];
-const full = (s: number) => inRange(s, SECTIONS.first) || inRange(s, SECTIONS.flip) || inRange(s, SECTIONS.fan);
+const full = (s: number) =>
+  inRange(s, SECTIONS.first) || inRange(s, SECTIONS.flip) || inRange(s, SECTIONS.fan) || inRange(s, SECTIONS.connect);
 const kicks: number[] = [];
 for (let s = 0; s < SONG_END; s += BEAT) if (full(s)) kicks.push(s);
 function duck(s: number) {
@@ -290,6 +291,28 @@ for (let i = 0; i < 9; i++) pluck(CUE.fan + 0.1 + Math.abs(i - 4) * CUE.fanStep,
 sparkle(CUE.fanOwned + 0.1, 98, 1.2);
 checkBlip(CUE.fanOwned, 1.0);
 for (let i = 0; i < 9; i++) tick(CUE.fanLine + i * 0.06, 1 + i * 0.05, 0.6, (i - 4) / 5);
+// On the go.
+whoosh(CUE.unplug, 0.4, 1.2, false);
+tick(CUE.unplug + 0.02, 0.5, 1.6);
+whoosh(CUE.bank - 0.1, 0.45, 0.8);
+subDrop(CUE.bank + 0.35, 0.4);
+tick(CUE.plugIn, 0.8, 1.6);
+checkBlip(CUE.plugIn + 0.05, 0.8);
+CUE.rings.forEach((t, i) => sparkle(t, 88 + i * 2, 0.9, 0.3));
+checkBlip(CUE.atPhone, 0.6);
+riser(CUE.launch - 0.2, CUE.gate, 0.9);
+whoosh(CUE.launch, 0.7, 1.1);
+tick(CUE.gate, 0.6, 1.8);
+checkBlip(CUE.gate + 0.04, 1.2);
+impact(CUE.gate, 0.4);
+whoosh(CUE.gate, 0.6, 0.9, false);
+impact(CUE.atMac, 0.6);
+ding(CUE.atMac + 0.05, 91, 0.9);
+CUE.chips.forEach((t, i) => pop(t, 0.9 + i * 0.12, 1.0, (i - 1.5) / 2));
+riser(CUE.reply - 0.3, CUE.reply + 0.2, 0.5);
+whoosh(CUE.reply, 1.0, 1.3);
+impact(CUE.backOnBoard, 0.8);
+[0, 0.06, 0.12].forEach((d, i) => sparkle(CUE.backOnBoard + d, 93 + i * 3, 1.1));
 riser(CUE.lockup - 0.6, CUE.lockup, 0.4);
 impact(CUE.lockup, 0.8);
 subDrop(CUE.lockup, 0.7);
